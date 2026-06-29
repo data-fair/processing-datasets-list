@@ -29,7 +29,9 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
   const settings = await fetchOwnerSettings(context, catalog.owner)
   const customColumns = buildCustomColumns(datasets, settings.customDefs)
 
-  // Sync the schema (static columns + the discovered custom metadata columns).
+  // Load the catalog: sync the schema (static + discovered custom columns) then
+  // write the lines, all under a single "data loading" step.
+  await log.step('Chargement des données')
   await syncSchema(context, catalog.id, buildCatalogSchema(customColumns))
   if (shouldBeStopped) return
 
@@ -93,7 +95,7 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
  */
 const syncSchema = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, schema: any[]) => {
   const { axios, log } = context
-  await log.step(`Synchronisation du schéma (${schema.length} colonnes)`)
+  await log.info(`Synchronisation du schéma (${schema.length} colonnes)`)
   await axios.patch(`api/v1/datasets/${catalogId}`, { schema })
 }
 

@@ -1,12 +1,10 @@
 {
   "type": "object",
-  "layout": "tabs",
   "required": [
     "datasetMode"
   ],
   "allOf": [
     {
-      "title": "Jeu de données catalogue",
       "default": {
         "datasetMode": "create",
         "datasetTitle": "Catalogue des jeux de données"
