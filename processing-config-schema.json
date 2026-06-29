@@ -1,0 +1,91 @@
+{
+  "type": "object",
+  "layout": "tabs",
+  "required": [
+    "datasetMode"
+  ],
+  "allOf": [
+    {
+      "title": "Jeu de données catalogue",
+      "default": {
+        "datasetMode": "create",
+        "datasetTitle": "Catalogue des jeux de données"
+      },
+      "oneOf": [
+        {
+          "title": "Créer le jeu de données",
+          "required": ["datasetTitle"],
+          "properties": {
+            "datasetMode": {
+              "type": "string",
+              "const": "create",
+              "title": "Action"
+            },
+            "datasetTitle": {
+              "type": "string",
+              "title": "Titre du jeu de données catalogue à créer",
+              "default": "Catalogue des jeux de données"
+            }
+          }
+        },
+        {
+          "title": "Mettre à jour le jeu de données",
+          "required": ["dataset"],
+          "properties": {
+            "datasetMode": {
+              "type": "string",
+              "const": "update",
+              "title": "Action"
+            },
+            "dataset": {
+              "type": "object",
+              "title": "Jeu de données catalogue à mettre à jour",
+              "layout": {
+                "getItems": {
+                  "url": "${context.dataFairUrl}/api/v1/datasets?select=id,title&${context.ownerFilter}&raw=true",
+                  "qSearchParam": "q",
+                  "itemsResults": "data.results",
+                  "itemTitle": "item.title",
+                  "itemKey": "item.id"
+                }
+              },
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "title": "Identifiant"
+                },
+                "title": {
+                  "type": "string",
+                  "title": "Titre"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Options",
+      "properties": {
+        "includeMetaOnly": {
+          "type": "boolean",
+          "title": "Inclure les jeux de données de métadonnées seules",
+          "description": "Les jeux de données \"métadonnées seules\" ne contiennent pas de données tabulaires (ils ne servent qu'à référencer des métadonnées). Activé par défaut.",
+          "default": true
+        },
+        "computeStorageSize": {
+          "type": "boolean",
+          "title": "Calculer la taille de stockage",
+          "description": "Récupère la taille de stockage (fichier + index) de chaque jeu de données. Calcul potentiellement coûteux que la vue liste ne fait pas.",
+          "default": true
+        },
+        "deleteStale": {
+          "type": "boolean",
+          "title": "Supprimer les lignes obsolètes",
+          "description": "Supprime du catalogue les lignes correspondant à des jeux de données qui n'existent plus.",
+          "default": true
+        }
+      }
+    }
+  ]
+}
