@@ -16,8 +16,7 @@ const BULK_CHUNK_SIZE = 1000
 let shouldBeStopped = false
 
 export const run: RunFunction<ProcessingConfig> = async (context) => {
-  const { processingConfig, log } = context
-  await log.step('Démarrage du traitement')
+  const { log } = context
 
   const catalog = await resolveCatalogDataset(context)
   if (shouldBeStopped) return
@@ -38,8 +37,7 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
   const lines = datasets.map(d => toCatalogLine(d, {
     virtualUsage,
     siteNames: settings.siteNames,
-    customColumns,
-    computeStorageSize: !!processingConfig.computeStorageSize
+    customColumns
   }))
   const summary = await syncLines(context, catalog.id, lines)
   if (shouldBeStopped) return
@@ -116,7 +114,7 @@ const fetchOwnerSettings = async (context: ProcessingContext<ProcessingConfig>, 
     const data = (await axios.get(`api/v1/settings/${owner.type}/${owner.id}/datasets-metadata`)).data
     for (const c of (data?.custom ?? [])) if (c?.key) customDefs.set(c.key, c.title || c.key)
   } catch {
-    await log.info('Définitions de métadonnées personnalisées non accessibles : libellés bruts utilisés')
+    await log.debug('Définitions de métadonnées personnalisées non accessibles : libellés bruts utilisés')
   }
 
   try {
@@ -125,7 +123,7 @@ const fetchOwnerSettings = async (context: ProcessingContext<ProcessingConfig>, 
       if (s?.type && s?.id) siteNames.set(`${s.type}:${s.id}`, s.title || s.url || `${s.type}:${s.id}`)
     }
   } catch {
-    await log.info('Sites de publication non accessibles : identifiants bruts utilisés')
+    await log.debug('Sites de publication non accessibles : identifiants bruts utilisés')
   }
 
   return { customDefs, siteNames }
@@ -136,7 +134,7 @@ const fetchOwnerSettings = async (context: ProcessingContext<ProcessingConfig>, 
  * itself is excluded so it does not reference itself and churn on every run.
  */
 const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, catalogId: string): Promise<any[]> => {
-  const { processingConfig, axios, log } = context
+  const { axios, log } = context
   await log.step('Récupération des jeux de données de l\'organisation')
 
   const all: any[] = []
@@ -154,7 +152,6 @@ const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, ca
     fetched += results.length
     for (const d of results) {
       if (d.id === catalogId) continue
-      if (d.isMetaOnly && !processingConfig.includeMetaOnly) continue
       all.push(d)
     }
     page++
@@ -165,23 +162,20 @@ const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, ca
 }
 
 /**
- * Upserts every catalog line and, when `deleteStale` is enabled, deletes the lines
- * of datasets that no longer exist. Everything goes through the `_bulk_lines` JSON API.
+ * Upserts every catalog line and deletes the lines of datasets that no longer
+ * exist. Everything goes through the `_bulk_lines` JSON API.
  */
 const syncLines = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, lines: any[]) => {
-  const { processingConfig, log } = context
+  const { log } = context
 
   const actions: any[] = lines.map(line => ({ ...line, _action: 'createOrUpdate' }))
-  let nbDeleted = 0
 
-  if (processingConfig.deleteStale) {
-    const keepIds = new Set(lines.map(l => l._id))
-    const existingIds = await fetchExistingLineIds(context, catalogId)
-    const staleIds = existingIds.filter(id => !keepIds.has(id))
-    for (const id of staleIds) actions.push({ _id: id, _action: 'delete' })
-    nbDeleted = staleIds.length
-    if (nbDeleted) await log.info(`${nbDeleted.toLocaleString()} ligne(s) obsolète(s) à supprimer`)
-  }
+  const keepIds = new Set(lines.map(l => l._id))
+  const existingIds = await fetchExistingLineIds(context, catalogId)
+  const staleIds = existingIds.filter(id => !keepIds.has(id))
+  for (const id of staleIds) actions.push({ _id: id, _action: 'delete' })
+  const nbDeleted = staleIds.length
+  if (nbDeleted) await log.info(`${nbDeleted.toLocaleString()} ligne(s) obsolète(s) à supprimer`)
 
   await log.task('Écriture des lignes du catalogue')
   await log.progress('Écriture des lignes du catalogue', 0, actions.length)

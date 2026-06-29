@@ -61,9 +61,10 @@ internal `_modified` field, which the public API does not expose.
 | --- | ----- | ----------- |
 | Jeu de données catalogue | `datasetMode` | `create` to create the catalog dataset, `update` to target an existing one |
 | Jeu de données catalogue | `datasetTitle` / `dataset` | Title to create, or reference to the dataset to update |
-| Options | `includeMetaOnly` | Include metadata-only datasets (on by default) |
-| Options | `computeStorageSize` | Populate the storage size column |
-| Options | `deleteStale` | Delete catalog lines of datasets that no longer exist |
+
+The catalog always includes metadata-only datasets, populates the storage size
+columns, and deletes catalog lines of datasets that no longer exist — these are
+not configurable.
 
 ## Development
 

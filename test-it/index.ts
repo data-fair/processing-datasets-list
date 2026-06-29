@@ -16,10 +16,7 @@ describe('Datasets list processing', () => {
     const context = testUtils.context({
       processingConfig: {
         datasetMode: 'create',
-        datasetTitle: 'Catalogue des jeux de données (test)',
-        includeMetaOnly: true,
-        computeStorageSize: true,
-        deleteStale: true
+        datasetTitle: 'Catalogue des jeux de données (test)'
       }
     }, config, false)
 
@@ -36,10 +33,7 @@ describe('Datasets list processing', () => {
     const context = testUtils.context({
       processingConfig: {
         datasetMode: 'update',
-        dataset: { id: config.datasetId, title: 'Catalogue des jeux de données' },
-        includeMetaOnly: true,
-        computeStorageSize: true,
-        deleteStale: true
+        dataset: { id: config.datasetId, title: 'Catalogue des jeux de données' }
       }
     }, config, false)
 

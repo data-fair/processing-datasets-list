@@ -131,8 +131,8 @@ export const buildCatalogSchema = (customColumns: CustomColumn[] = []) => [
   { key: 'count', type: 'integer', title: 'Nombre de lignes', 'x-group': group.structure, description: 'Nombre de lignes (enregistrements) indexées dans le jeu.' },
   { key: 'nbColumns', type: 'integer', title: 'Nombre de colonnes', 'x-group': group.structure, description: 'Nombre de colonnes du schéma, hors colonnes calculées.' },
   { key: 'primaryKey', type: 'string', separator: MULTI_SEP, title: 'Clé primaire', 'x-group': group.structure, description: 'Colonne(s) composant la clé primaire, qui identifie de façon unique une ligne.' },
-  { key: 'storageSize', type: 'integer', title: 'Taille de stockage (octets)', 'x-group': group.structure, description: 'Taille de stockage des données (fichier et base), renseignée si l\'option de calcul est activée.' },
-  { key: 'indexedSize', type: 'integer', title: 'Taille indexée (octets)', 'x-group': group.structure, description: 'Taille de l\'index de recherche, renseignée si l\'option de calcul est activée.' },
+  { key: 'storageSize', type: 'integer', title: 'Taille de stockage (octets)', 'x-group': group.structure, description: 'Taille de stockage des données (fichier et base).' },
+  { key: 'indexedSize', type: 'integer', title: 'Taille indexée (octets)', 'x-group': group.structure, description: 'Taille de l\'index de recherche.' },
 
   // — Relations & enrichissements —
   { key: 'nbExtensions', type: 'integer', title: 'Nombre d\'enrichissements', 'x-group': group.relations, description: 'Nombre d\'enrichissements (extensions) appliqués au jeu pour compléter ses données à partir de sources externes.' },
@@ -235,7 +235,6 @@ export type CatalogLineOptions = {
   virtualUsage: Map<string, number>
   siteNames: Map<string, string>
   customColumns: CustomColumn[]
-  computeStorageSize: boolean
 }
 
 /** Builds the account reference (`type:id` or `type:id:department`) used for the owner avatar. */
@@ -316,8 +315,8 @@ export const toCatalogLine = (d: any, opts: CatalogLineOptions) => {
     count: typeof d.count === 'number' ? d.count : undefined,
     nbColumns: Array.isArray(d.schema) ? d.schema.filter((p: any) => !p['x-calculated']).length : undefined,
     primaryKey: joinStrings(d.primaryKey),
-    storageSize: opts.computeStorageSize ? d.storage?.size : undefined,
-    indexedSize: opts.computeStorageSize ? d.storage?.indexed?.size : undefined,
+    storageSize: d.storage?.size,
+    indexedSize: d.storage?.indexed?.size,
 
     // — Relations & enrichissements —
     nbExtensions: Array.isArray(d.extensions) ? d.extensions.length : 0,
