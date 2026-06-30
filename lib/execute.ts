@@ -4,7 +4,6 @@ import { buildCatalogSchema, buildCustomColumns, buildVirtualUsageIndex, toCatal
 
 type DatasetRef = { id: string, title: string }
 type Owner = { type?: string, id?: string }
-type OwnerSettings = { customDefs: Map<string, string>, siteNames: Map<string, string> }
 
 const LIST_PAGE_SIZE = 1000
 const BULK_CHUNK_SIZE = 1000
@@ -21,13 +20,13 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
   const catalog = await resolveCatalogDataset(context)
   if (shouldBeStopped) return
 
-  const datasets = await fetchAllDatasets(context, catalog.id)
+  const datasets = await fetchAllDatasets(context, catalog.id, catalog.owner)
   if (shouldBeStopped) return
 
-  // Resolve human-readable labels (custom metadata titles, portal names) from the
-  // owner settings — best-effort, falls back to raw keys/ids if not accessible.
-  const settings = await fetchOwnerSettings(context, catalog.owner)
-  const customColumns = buildCustomColumns(datasets, settings.customDefs)
+  // Custom metadata columns are discovered from the keys present on the datasets
+  // themselves (the owner settings, which would give nicer titles, require a member
+  // role on the org that the processing API key does not have).
+  const customColumns = buildCustomColumns(datasets)
 
   // Load the catalog: sync the schema (static + discovered custom columns) then
   // write the lines, all under a single "data loading" step.
@@ -38,7 +37,6 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
   const virtualUsage = buildVirtualUsageIndex(datasets)
   const lines = datasets.map(d => toCatalogLine(d, {
     virtualUsage,
-    siteNames: settings.siteNames,
     customColumns
   }))
   const summary = await syncLines(context, catalog.id, lines)
@@ -100,44 +98,31 @@ const syncSchema = async (context: ProcessingContext<ProcessingConfig>, catalogI
 }
 
 /**
- * Fetches owner-level settings used to resolve human-readable labels:
- * - custom metadata field definitions (key -> title)
- * - publication sites (`type:id` -> title)
- * Best-effort: if the API key cannot read settings, returns empty maps and the
- * mapping falls back to raw keys/ids.
+ * Builds the data-fair `owner` filter value used to scope the dataset list to the
+ * catalog's owner. Without it, the list endpoint returns every dataset readable by
+ * the API key — including globally-public datasets that belong to other orgs.
+ *
+ * The department is intentionally omitted: a value of `type:id` (no department
+ * segment) matches every dataset of the organization, all departments included
+ * (see data-fair `ownerFilters`). A `type:id:department` value would restrict to a
+ * single department, which is not what we want for an organization-wide catalog.
  */
-const fetchOwnerSettings = async (context: ProcessingContext<ProcessingConfig>, owner: Owner): Promise<OwnerSettings> => {
-  const { axios, log } = context
-  const customDefs = new Map<string, string>()
-  const siteNames = new Map<string, string>()
-  if (!owner?.type || !owner?.id) return { customDefs, siteNames }
-
-  try {
-    const data = (await axios.get(`api/v1/settings/${owner.type}/${owner.id}/datasets-metadata`)).data
-    for (const c of (data?.custom ?? [])) if (c?.key) customDefs.set(c.key, c.title || c.key)
-  } catch {
-    await log.debug('Définitions de métadonnées personnalisées non accessibles : libellés bruts utilisés')
-  }
-
-  try {
-    const data = (await axios.get(`api/v1/settings/${owner.type}/${owner.id}/publication-sites`)).data
-    for (const s of (Array.isArray(data) ? data : [])) {
-      if (s?.type && s?.id) siteNames.set(`${s.type}:${s.id}`, s.title || s.url || `${s.type}:${s.id}`)
-    }
-  } catch {
-    await log.debug('Sites de publication non accessibles : identifiants bruts utilisés')
-  }
-
-  return { customDefs, siteNames }
+const ownerFilter = (owner: Owner): string | undefined => {
+  if (!owner?.type || !owner?.id) return undefined
+  return `${owner.type}:${owner.id}`
 }
 
 /**
- * Fetches every dataset accessible to the API key, paginated. The catalog dataset
+ * Fetches the datasets owned by the catalog's owner, paginated. Scoped with the
+ * `owner` filter so foreign public datasets are excluded. The catalog dataset
  * itself is excluded so it does not reference itself and churn on every run.
  */
-const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, catalogId: string): Promise<any[]> => {
+const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, owner: Owner): Promise<any[]> => {
   const { axios, log } = context
   await log.step('Récupération des jeux de données de l\'organisation')
+
+  const ownerParam = ownerFilter(owner)
+  if (!ownerParam) await log.warning('Propriétaire du catalogue inconnu : tous les jeux de données accessibles seront référencés')
 
   const all: any[] = []
   let page = 1
@@ -146,7 +131,7 @@ const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, ca
   while (fetched < total) {
     if (shouldBeStopped) break
     const { data } = await axios.get('api/v1/datasets', {
-      params: { size: LIST_PAGE_SIZE, page, select: LIST_SELECT, sort: 'createdAt:-1' }
+      params: { size: LIST_PAGE_SIZE, page, select: LIST_SELECT, sort: 'createdAt:-1', ...(ownerParam ? { owner: ownerParam } : {}) }
     })
     total = data.count ?? 0
     const results = data.results ?? []

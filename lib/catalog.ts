@@ -148,7 +148,7 @@ export const buildCatalogSchema = (customColumns: CustomColumn[] = []) => [
   { key: 'nbSingleSearchs', type: 'integer', title: 'Recherches code/libellé', 'x-group': group.masterData, description: 'Nombre de services de recherche code/libellé exposés, utilisables dans les formulaires de saisie des jeux éditables.' },
 
   // — Publication —
-  { key: 'publicationPortals', type: 'string', separator: MULTI_SEP, title: 'Portails de publication', 'x-group': group.publication, description: 'Noms des sites/portails sur lesquels le jeu est effectivement publié.' },
+  { key: 'publicationPortals', type: 'string', separator: MULTI_SEP, title: 'Portails de publication', 'x-group': group.publication, description: 'Identifiants (type:id) des sites/portails sur lesquels le jeu est effectivement publié.' },
   { key: 'nbPublicationSites', type: 'integer', title: 'Nombre de sites de publication', 'x-group': group.publication, description: 'Nombre de sites/portails sur lesquels le jeu est effectivement publié.' },
   { key: 'nbRequestedPublicationSites', type: 'integer', title: 'Sites de publication demandés', 'x-group': group.publication, description: 'Nombre de demandes de publication en attente de validation par un administrateur.' },
 
@@ -193,27 +193,17 @@ const joinTitles = (arr: any): string | undefined => {
 }
 
 /**
- * Discovers the custom metadata columns to add: the owner-defined fields (with
- * their titles, when settings are accessible), unioned with any custom keys that
- * actually appear on datasets (defensive). Falls back to the raw key as a title.
+ * Discovers the custom metadata columns to add from the keys that actually appear
+ * on the datasets (object-form `customMetadata` only). The owner-defined titles
+ * live in the owner settings, which the processing API key cannot read, so the raw
+ * key is used as the column title.
  */
-export const buildCustomColumns = (datasets: any[], customDefs: Map<string, string>): CustomColumn[] => {
-  const cols: CustomColumn[] = []
-  const seen = new Set<string>()
-  const add = (srcKey: string, title?: string) => {
-    if (!srcKey || seen.has(srcKey)) return
-    seen.add(srcKey)
-    cols.push({ srcKey, key: sanitizeKey(srcKey), title: title || srcKey })
-  }
-  // owner-defined fields first, in their declared order
-  for (const [key, title] of customDefs) add(key, title)
-  // then any extra keys present on datasets (object-form only)
-  const extra = new Set<string>()
+export const buildCustomColumns = (datasets: any[]): CustomColumn[] => {
+  const keys = new Set<string>()
   for (const d of datasets) {
-    if (isPlainObject(d.customMetadata)) for (const k of Object.keys(d.customMetadata)) if (!customDefs.has(k)) extra.add(k)
+    if (isPlainObject(d.customMetadata)) for (const k of Object.keys(d.customMetadata)) keys.add(k)
   }
-  for (const k of [...extra].sort()) add(k)
-  return cols
+  return [...keys].sort().map(srcKey => ({ srcKey, key: sanitizeKey(srcKey), title: srcKey }))
 }
 
 /**
@@ -233,7 +223,6 @@ export const buildVirtualUsageIndex = (datasets: any[]): Map<string, number> => 
 
 export type CatalogLineOptions = {
   virtualUsage: Map<string, number>
-  siteNames: Map<string, string>
   customColumns: CustomColumn[]
 }
 
@@ -265,7 +254,9 @@ export const toCatalogLine = (d: any, opts: CatalogLineOptions) => {
   const bbox = Array.isArray(d.bbox) && d.bbox.length ? d.bbox.join(', ') : undefined
   const projection = d.projection?.title || d.projection?.code || undefined
   const sites = [...new Set<string>(d.publicationSites ?? [])]
-  const portals = sites.map((s: string) => opts.siteNames.get(s) ?? s)
+  // Raw `type:id` identifiers — resolving them to portal names needs the owner
+  // settings, which the processing API key cannot read.
+  const portals = sites
   const nbBulkSearchs = Array.isArray(d.masterData?.bulkSearchs) ? d.masterData.bulkSearchs.length : 0
   const nbSingleSearchs = Array.isArray(d.masterData?.singleSearchs) ? d.masterData.singleSearchs.length : 0
 

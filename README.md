@@ -1,6 +1,6 @@
 # <img alt="Data FAIR logo" src="https://cdn.jsdelivr.net/gh/data-fair/data-fair@master/ui/public/assets/logo.svg" width="30"> @data-fair/processing-datasets-list
 
-Plugin for [data-fair/processings](https://github.com/data-fair/processings). Builds and maintains a REST dataset that catalogs all the datasets accessible to the configured API key (typically every dataset of an organization).
+Plugin for [data-fair/processings](https://github.com/data-fair/processings). Builds and maintains a REST dataset that catalogs every dataset owned by the catalog's owner (the organization, or department, that owns the catalog dataset).
 
 Unlike the back-office datasets list view, this runs asynchronously: it can perform per-dataset computations and aggregations that would be too costly to do on the fly, and it materializes the result as a regular dataset — so it can be filtered, charted, embedded and published like any other.
 
@@ -8,7 +8,7 @@ Unlike the back-office datasets list view, this runs asynchronously: it can perf
 
 1. **Catalog dataset** — on first run (`create` mode) it creates a REST dataset with the catalog schema (see below) and switches its own config to `update` mode, storing the reference.
 2. **Schema sync** — on every run the catalog schema is re-pushed (`PATCH`), so new columns appear on existing catalogs without a manual rebuild.
-3. **Collect** — it paginates through `GET /api/v1/datasets` (scoped by the API key), excluding the catalog dataset itself.
+3. **Collect** — it paginates through `GET /api/v1/datasets`, scoped to the catalog owner with the `owner` filter (so foreign public datasets are excluded), excluding the catalog dataset itself.
 4. **Upsert** — each dataset becomes one line (keyed by the dataset id) pushed through the `_bulk_lines` API.
 5. **Prune** — when enabled, lines of datasets that no longer exist are deleted so the catalog stays in sync.
 
@@ -37,7 +37,7 @@ vocabulary (`api/contract/vocabulary.js`) are used.
 | Structure & stockage | `count`, `nbColumns`, `primaryKey`, `storageSize`, `indexedSize` |
 | Relations & enrichissements | `nbExtensions`, `nbAttachments`, `nbChildren` (virtual sources), `nbUsedInVirtual` (datasets reusing it), `nbApplications`, `nbRelatedDatasets` |
 | Données de référence | `isMasterData` (exposes reference-data services), `nbBulkSearchs` (bulk enrichment endpoints), `nbSingleSearchs` (code/label search endpoints) — derived from the dataset's `masterData` config |
-| Publication | `publicationPortals` (resolved portal names), `nbPublicationSites`, `nbRequestedPublicationSites` |
+| Publication | `publicationPortals` (portal identifiers `type:id`), `nbPublicationSites`, `nbRequestedPublicationSites` |
 | État | `status` |
 | Audit & dates | `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `dataUpdatedAt`, `dataUpdatedBy`, `finalizedAt`, `portalModified` (modification date shown on the portal: `modified` › `dataUpdatedAt` › `updatedAt`) |
 
@@ -48,12 +48,13 @@ The computed aggregates (`nbColumns`, `nbChildren`, `nbUsedInVirtual`,
 `nbApplications`…) are cross-dataset information a synchronous list view cannot
 afford; `nbUsedInVirtual` is a reverse index built once per run over the whole
 dataset list. **Custom metadata** columns are appended dynamically (one per
-owner-defined field) at the end of the **Métadonnées** group. Their titles, and
-the **publication portal names**, are resolved from the owner settings
-(`datasets-metadata` and `publication-sites`) when the API key can read them;
-otherwise the raw keys/ids are used. `portalModified` is recomputed locally
-(`modified` › `dataUpdatedAt` › `updatedAt`) because data-fair stores it as the
-internal `_modified` field, which the public API does not expose.
+custom key found on the datasets) at the end of the **Métadonnées** group. Their
+titles, and the **publication portals**, use the raw keys/identifiers: the nicer
+labels live in the owner settings (`datasets-metadata`, `publication-sites`),
+which require a member role on the org that the processing API key does not have.
+`portalModified` is recomputed locally (`modified` › `dataUpdatedAt` ›
+`updatedAt`) because data-fair stores it as the internal `_modified` field, which
+the public API does not expose.
 
 ## Configuration
 
