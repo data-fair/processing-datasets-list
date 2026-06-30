@@ -3,7 +3,7 @@ import type { ProcessingConfig } from '#types/processingConfig/index.ts'
 import { buildCatalogSchema, buildCustomColumns, buildVirtualUsageIndex, toCatalogLine, LIST_SELECT } from './catalog.ts'
 
 type DatasetRef = { id: string, title: string }
-type Owner = { type?: string, id?: string }
+type Owner = { type?: string, id?: string, department?: string }
 
 const LIST_PAGE_SIZE = 1000
 const BULK_CHUNK_SIZE = 1000
@@ -102,14 +102,15 @@ const syncSchema = async (context: ProcessingContext<ProcessingConfig>, catalogI
  * catalog's owner. Without it, the list endpoint returns every dataset readable by
  * the API key — including globally-public datasets that belong to other orgs.
  *
- * The department is intentionally omitted: a value of `type:id` (no department
- * segment) matches every dataset of the organization, all departments included
- * (see data-fair `ownerFilters`). A `type:id:department` value would restrict to a
- * single department, which is not what we want for an organization-wide catalog.
+ * The scope follows the catalog owner (see data-fair `ownerFilters`):
+ * - org root (`type:id`, no department) → the whole organization, every department
+ *   included;
+ * - department (`type:id:department`) → that department only, excluding the org
+ *   root and the other departments.
  */
 const ownerFilter = (owner: Owner): string | undefined => {
   if (!owner?.type || !owner?.id) return undefined
-  return `${owner.type}:${owner.id}`
+  return owner.department ? `${owner.type}:${owner.id}:${owner.department}` : `${owner.type}:${owner.id}`
 }
 
 /**
