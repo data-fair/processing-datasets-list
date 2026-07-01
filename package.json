@@ -1,6 +1,6 @@
 {
   "name": "@data-fair/processing-datasets-list",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Plugin for data-fair-processings. Build and maintain a REST dataset that catalogs all the datasets of an organization.",
   "main": "index.ts",
   "type": "module",
