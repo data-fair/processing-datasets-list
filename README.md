@@ -7,10 +7,24 @@ Unlike the back-office datasets list view, this runs asynchronously: it can perf
 ## How it works
 
 1. **Catalog dataset** — on first run (`create` mode) it creates a REST dataset with the catalog schema (see below) and switches its own config to `update` mode, storing the reference.
-2. **Schema sync** — on every run the catalog schema is re-pushed (`PATCH`), so new columns appear on existing catalogs without a manual rebuild.
-3. **Collect** — it paginates through `GET /api/v1/datasets`, scoped to the catalog owner with the `owner` filter (so foreign public datasets are excluded), excluding the catalog dataset itself.
-4. **Upsert** — each dataset becomes one line (keyed by the dataset id) pushed through the `_bulk_lines` API.
-5. **Prune** — when enabled, lines of datasets that no longer exist are deleted so the catalog stays in sync.
+2. **Collect** — it paginates through `GET /api/v1/datasets`, scoped to the catalog owner with the `owner` filter (so foreign public datasets are excluded), excluding the catalog dataset itself.
+3. **Read** — the existing catalog lines are read: their ids, to prune the ones whose dataset is gone, and the values of the columns to preserve (see below). This happens **before** the schema is patched, because that patch unsets the columns it drops on every line.
+4. **Schema sync** — the catalog schema is re-pushed (`PATCH`), so new columns appear on existing catalogs without a manual rebuild.
+5. **Upsert** — each dataset becomes one line (keyed by the dataset id) pushed through the `_bulk_lines` API.
+6. **Prune** — lines of datasets that no longer exist are deleted so the catalog stays in sync.
+
+## Columns added by hand
+
+A catalog is a good place to annotate datasets, and those annotations are added as extra
+columns on the catalog dataset itself. They are not something this processing produces, so
+without care every run would destroy them twice over: a schema `PATCH` that drops a column
+makes data-fair `$unset` it on every line, and `_bulk_lines` replaces whole lines rather than
+merging them.
+
+With **`preserveExtraColumns`** (on by default), any column of the live catalog that this
+processing does not produce is carried over, schema and values. Columns data-fair computes
+itself (`x-calculated`) are left alone, and columns this processing deliberately retired are
+never mistaken for hand-added ones, so they can actually be dropped.
 
 ## Catalog schema
 
@@ -73,6 +87,7 @@ the public API does not expose.
 | --- | ----- | ----------- |
 | Jeu de données catalogue | `datasetMode` | `create` to create the catalog dataset, `update` to target an existing one |
 | Jeu de données catalogue | `datasetTitle` / `dataset` | Title to create, or reference to the dataset to update |
+| Jeu de données catalogue | `preserveExtraColumns` | Carry over the columns added by hand on the catalog, schema and values. On by default; turning it off makes every run delete them for good |
 
 The catalog always includes metadata-only datasets, populates the storage size
 columns, and deletes catalog lines of datasets that no longer exist — these are

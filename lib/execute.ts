@@ -1,6 +1,7 @@
 import type { RunFunction, ProcessingContext } from '@data-fair/lib-common-types/processings.js'
 import type { ProcessingConfig } from '#types/processingConfig/index.ts'
-import { buildCatalogSchema, buildCustomColumns, buildVirtualUsageIndex, toCatalogLine, LIST_SELECT } from './catalog.ts'
+import { buildCatalogSchema, buildCustomColumns, buildVirtualUsageIndex, toCatalogLine, LIST_SELECT, RETIRED_KEYS } from './catalog.ts'
+import { extraColumns, mergeSchema, mergeLine, type SchemaColumn } from './preserve.ts'
 
 type DatasetRef = { id: string, title: string }
 type Owner = { type?: string, id?: string, department?: string }
@@ -15,7 +16,7 @@ const BULK_CHUNK_SIZE = 1000
 let shouldBeStopped = false
 
 export const run: RunFunction<ProcessingConfig> = async (context) => {
-  const { log } = context
+  const { log, processingConfig } = context
 
   const catalog = await resolveCatalogDataset(context)
   if (shouldBeStopped) return
@@ -27,19 +28,34 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
   // themselves (the owner settings, which would give nicer titles, require a member
   // role on the org that the processing API key does not have).
   const customColumns = buildCustomColumns(datasets)
+  const generatedSchema = buildCatalogSchema(customColumns)
 
   // Load the catalog: sync the schema (static + discovered custom columns) then
   // write the lines, all under a single "data loading" step.
   await log.step('Chargement des données')
-  await syncSchema(context, catalog.id, buildCatalogSchema(customColumns))
+
+  const extras = processingConfig.preserveExtraColumns === false
+    ? []
+    : extraColumns(catalog.schema, generatedSchema, RETIRED_KEYS)
+  if (extras.length) {
+    await log.info(`${extras.length} colonne(s) ajoutée(s) manuellement, préservée(s) : ${extras.map(c => c.key).join(', ')}`)
+  }
+
+  // Read the lines BEFORE patching the schema: data-fair unsets the columns a schema patch
+  // drops, on every line, so reading afterwards would read away what we are preserving.
+  const existing = await fetchExistingLines(context, catalog.id, extras.map(c => c.key))
+  if (shouldBeStopped) return
+
+  await syncSchema(context, catalog.id, mergeSchema(generatedSchema, extras))
   if (shouldBeStopped) return
 
   const virtualUsage = buildVirtualUsageIndex(datasets)
-  const lines = datasets.map(d => toCatalogLine(d, {
-    virtualUsage,
-    customColumns
-  }))
-  const summary = await syncLines(context, catalog.id, lines)
+  const lines = datasets.map(d => mergeLine(
+    toCatalogLine(d, { virtualUsage, customColumns }),
+    existing.values.get(d.id),
+    extras
+  ))
+  const summary = await syncLines(context, catalog.id, lines, existing.ids)
   if (shouldBeStopped) return
 
   // We don't wait for a finalize event: data-fair finalizes the dataset on its own
@@ -59,7 +75,7 @@ export const stop: () => Promise<void> = async () => { shouldBeStopped = true }
  * 'update', or fetches the existing one in 'update' mode. The schema is synced
  * separately (see `syncSchema`) once the custom metadata columns are known.
  */
-const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig>): Promise<DatasetRef & { owner: Owner }> => {
+const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig>): Promise<DatasetRef & { owner: Owner, schema: SchemaColumn[] }> => {
   const { processingConfig, processingId, axios, log, patchConfig } = context
 
   if (processingConfig.datasetMode === 'create') {
@@ -76,7 +92,7 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
     await log.info(`Jeu de données créé, id="${dataset.id}", title="${dataset.title}"`)
     const ref = { id: dataset.id, title: dataset.title }
     await patchConfig({ datasetMode: 'update', dataset: ref } as any)
-    return { ...ref, owner: dataset.owner ?? {} }
+    return { ...ref, owner: dataset.owner ?? {}, schema: dataset.schema ?? [] }
   }
 
   const ref = processingConfig.dataset as DatasetRef
@@ -84,7 +100,7 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
   const dataset = (await axios.get(`api/v1/datasets/${ref.id}`)).data
   if (!dataset) throw new Error(`Le jeu de données catalogue n'existe pas, id="${ref.id}"`)
   await log.info(`Jeu de données catalogue trouvé, id="${dataset.id}", title="${dataset.title}"`)
-  return { id: dataset.id, title: dataset.title, owner: dataset.owner ?? {} }
+  return { id: dataset.id, title: dataset.title, owner: dataset.owner ?? {}, schema: dataset.schema ?? [] }
 }
 
 /**
@@ -153,13 +169,12 @@ const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, ca
  * Upserts every catalog line and deletes the lines of datasets that no longer
  * exist. Everything goes through the `_bulk_lines` JSON API.
  */
-const syncLines = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, lines: any[]) => {
+const syncLines = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, lines: any[], existingIds: string[]) => {
   const { log } = context
 
   const actions: any[] = lines.map(line => ({ ...line, _action: 'createOrUpdate' }))
 
   const keepIds = new Set(lines.map(l => l._id))
-  const existingIds = await fetchExistingLineIds(context, catalogId)
   const staleIds = existingIds.filter(id => !keepIds.has(id))
   for (const id of staleIds) actions.push({ _id: id, _action: 'delete' })
   const nbDeleted = staleIds.length
@@ -190,22 +205,28 @@ const syncLines = async (context: ProcessingContext<ProcessingConfig>, catalogId
 }
 
 /**
- * Returns all `_id` values currently stored in the catalog dataset, paginated.
+ * Reads the lines currently stored in the catalog, paginated: their `_id` (to prune the ones
+ * whose dataset is gone) and the values of the columns to preserve. Selecting the extra
+ * columns here costs no extra request, the pagination happens either way.
  */
-const fetchExistingLineIds = async (context: ProcessingContext<ProcessingConfig>, catalogId: string): Promise<string[]> => {
+const fetchExistingLines = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, extraKeys: string[]): Promise<{ ids: string[], values: Map<string, Record<string, any>> }> => {
   const { axios } = context
   const ids: string[] = []
+  const values = new Map<string, Record<string, any>>()
   let page = 1
   let more = true
   while (more) {
     if (shouldBeStopped) break
     const { data } = await axios.get(`api/v1/datasets/${catalogId}/lines`, {
-      params: { size: LIST_PAGE_SIZE, page, select: '_id' }
+      params: { size: LIST_PAGE_SIZE, page, select: ['_id', ...extraKeys].join(',') }
     })
     const results = data.results ?? []
-    for (const r of results) ids.push(r._id)
+    for (const r of results) {
+      ids.push(r._id)
+      if (extraKeys.length) values.set(r._id, r)
+    }
     if (results.length < LIST_PAGE_SIZE) more = false
     else page++
   }
-  return ids
+  return { ids, values }
 }
