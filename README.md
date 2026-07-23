@@ -31,7 +31,7 @@ vocabulary (`api/contract/vocabulary.js`) are used.
 | ----- | ------- |
 | Général | `storageType` (Type: Fichier/Éditable/Virtuel/Métadonnées), `page` (link), `id`, `slug`, `title`, `summary`, `description` (markdown), `image`, `keywords`, `topics` |
 | Métadonnées | `license`, `conformsTo` + `conformsToVersion` + `conformsToUrl`, `origin`, `creator`, `frequency`, `spatial`, `temporalStart`, `temporalEnd`, `modified` (DCAT source modification date), `relatedDatasets`, then one column per owner-defined custom field (discovered per run) |
-| Métadonnées calculées | `bbox`, `projection`, `timeZone` (auto-detected, not editable) |
+| Métadonnées calculées | `bbox`, `projection`, `timeZone` (auto-detected, not editable), `metadataScore` |
 | Propriété & visibilité | `owner` (avatar), `visibility`, `published` |
 | Fichier | `fileName`, `fileFormat` |
 | Structure & stockage | `count`, `nbColumns`, `primaryKey`, `storageSize`, `indexedSize` |
@@ -39,10 +39,21 @@ vocabulary (`api/contract/vocabulary.js`) are used.
 | Données de référence | `isMasterData` (exposes reference-data services), `nbBulkSearchs` (bulk enrichment endpoints), `nbSingleSearchs` (code/label search endpoints) — derived from the dataset's `masterData` config |
 | Publication | `publicationPortals` (portal identifiers `type:id`), `nbPublicationSites`, `nbRequestedPublicationSites` |
 | État | `status` |
-| Audit & dates | `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `dataUpdatedAt`, `dataUpdatedBy`, `finalizedAt`, `portalModified` (modification date shown on the portal: `modified` › `dataUpdatedAt` › `updatedAt`) |
+| Audit & dates | `createdAt`, `updatedAt`, `dataUpdatedAt`, `finalizedAt`, `portalModified` (modification date shown on the portal: `modified` › `dataUpdatedAt` › `updatedAt`) |
+
+The catalog carries **no author column**: who created or last updated a dataset names a
+person, and a catalog is made to be published. They are not requested from the API at all.
 
 Multi-valued columns (`keywords`, `topics`, `relatedDatasets`, `primaryKey`,
-`publicationPortals`) carry a `separator` so data-fair treats them as arrays.
+`publicationPortals`) carry a `separator` so data-fair treats them as arrays. That separator
+is a **semicolon**, not a comma: topic labels, keywords and dataset titles routinely contain
+commas, which a comma separator would split into bogus values.
+
+`metadataScore` rates the metadata of each dataset from 0 to 100. Ten criteria receive a note
+from 0 to 1, weighted in points and scaled on their total; the column documents its own
+formula, so any score can be explained by reading the column description. Presence is only
+part of it: a description repeating the title, a summary carrying html or markdown, one
+keyword or thirty, all score below a field simply being filled.
 
 The computed aggregates (`nbColumns`, `nbChildren`, `nbUsedInVirtual`,
 `nbApplications`…) are cross-dataset information a synchronous list view cannot

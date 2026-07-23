@@ -10,6 +10,7 @@
     "prepare": "husky || true",
     "build-types": "export NODE_OPTIONS='--experimental-strip-types' && df-build-types ./",
     "test-base": "NODE_ENV=test node --experimental-strip-types --test-force-exit --test-concurrency=1 --test --test-reporter=spec --test-reporter-destination=stdout",
+    "test-unit": "npm run test-base test/*.ts",
     "test": "npm run test-base test-it/*.ts"
   },
   "imports": {

@@ -39,8 +39,19 @@ const group = {
   audit: 'Audit & dates'
 }
 
-/** Separator used for multi-valued (array) string columns. */
-const MULTI_SEP = ', '
+/**
+ * Separator used for multi-valued (array) string columns. A semicolon rather than a
+ * comma: topic labels, keywords and dataset titles routinely contain commas, which a
+ * comma separator would split into bogus values.
+ */
+const MULTI_SEP = '; '
+
+/**
+ * Columns this processing used to produce and deliberately dropped. They must never be
+ * mistaken for hand-added columns and preserved, or they could not be dropped at all.
+ * The three below name a person and are removed for GDPR reasons.
+ */
+export const RETIRED_KEYS = ['createdBy', 'updatedBy', 'dataUpdatedBy']
 
 /** Stored code -> nice label maps (rendered in the table through `x-labels`). */
 const STORAGE_TYPE_LABELS: Record<string, string> = {
@@ -75,6 +86,142 @@ const FREQUENCY_LABELS: Record<string, string> = {
   daily: 'Tous les jours',
   continuous: 'En continu',
   irregular: 'Irrégulière'
+}
+
+/**
+ * Points per criterion of the metadata quality score. Expressed as small integers rather
+ * than as a percentage: the score is scaled on their sum, so adding or removing a criterion
+ * does not force a redistribution over the other ones.
+ */
+export const QUALITY_POINTS: Record<string, number> = {
+  description: 4,
+  summary: 3,
+  license: 3,
+  keywords: 2,
+  topics: 2,
+  creator: 2,
+  origin: 1,
+  frequency: 1,
+  spatial: 1,
+  temporal: 1
+}
+
+const QUALITY_TOTAL = Object.values(QUALITY_POINTS).reduce((a, b) => a + b, 0)
+
+/**
+ * Length steps of a description, in characters. Beyond these it is dumping data in prose
+ * rather than saying what the dataset is, and nobody reads it.
+ */
+const DESCRIPTION_LONG = 3000
+const DESCRIPTION_TOO_LONG = 5000
+
+/** Rendered as markdown by data-fair wherever the column is documented. */
+const QUALITY_DOC = `Score de complétude et de qualité des métadonnées, de 0 à 100, recalculé à chaque exécution du traitement à partir des valeurs de cette même ligne.
+
+Dix critères reçoivent une note de 0 à 1, multipliée par leur nombre de points. Le total est ramené sur 100 : \`score = 100 x points obtenus / ${QUALITY_TOTAL}\`. Pour un critère donné, le premier cas qui s'applique l'emporte.
+
+| Critère | Points | Note |
+| --- | --- | --- |
+| Description | ${QUALITY_POINTS.description} | vide : 0 ; identique au titre : 0 ; moins de 100 caractères : 0,25 ; plus de ${DESCRIPTION_TOO_LONG} caractères : 0,25 ; plus de ${DESCRIPTION_LONG} : 0,5 ; commence par le titre : 0,5 ; sinon : 1 |
+| Résumé | ${QUALITY_POINTS.summary} | vide : 0 ; identique au titre : 0 ; contient du HTML, du markdown ou un lien : 0,25 ; moins de 50 caractères : 0,5 ; jusqu'à 200 : 1 ; de 201 à 250 : 0,75 ; au-delà de 250 : 0,25 |
+| Licence | ${QUALITY_POINTS.license} | vide : 0 ; sinon : 1 |
+| Mots-clés | ${QUALITY_POINTS.keywords} | aucun : 0 ; 1 ou 2 : 0,5 ; de 3 à 9 : 1 ; 10 ou plus : 0,5 |
+| Thématiques | ${QUALITY_POINTS.topics} | vide : 0 ; sinon : 1 |
+| Créateur | ${QUALITY_POINTS.creator} | vide : 0 ; sinon : 1 |
+| Origine | ${QUALITY_POINTS.origin} | vide : 0 ; sinon : 1 |
+| Fréquence de mise à jour | ${QUALITY_POINTS.frequency} | vide : 0 ; sinon : 1 |
+| Couverture spatiale | ${QUALITY_POINTS.spatial} | vide : 0 ; sinon : 1 |
+| Couverture temporelle | ${QUALITY_POINTS.temporal} | début et fin vides : 0 ; sinon : 1 |
+
+La longueur de la description est mesurée balises HTML retirées. Les comparaisons avec le titre ignorent la casse, les accents et la ponctuation. Le score final est arrondi à l'entier.`
+
+const stripTags = (value: any): string =>
+  String(value ?? '').replace(/&nbsp;/g, ' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+
+/** Case, accents and punctuation folded, to compare a text to the dataset title. */
+const fold = (value: any): string =>
+  stripTags(value).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+const filled = (value: any): number => (typeof value === 'string' ? value.trim() : value) ? 1 : 0
+
+/**
+ * A summary is displayed as raw text: markup shows through, links are not clickable. The tag
+ * pattern requires a letter right after the `<` so a comparison sign ("moins de < 10") is not
+ * mistaken for html.
+ */
+const RICH_TEXT = [
+  /<[a-zA-Z/][^>]*>/,
+  /&[a-zA-Z]+;|&#\d+;/,
+  /\[[^\]]*\]\([^)]*\)/,
+  /\*\*|__/,
+  /(?:^|\n)\s*#{1,6}\s/,
+  /https?:\/\//
+]
+
+const isRichText = (text: string): boolean => RICH_TEXT.some(rx => rx.test(text))
+
+/**
+ * A description is measured on its text, tags stripped: `<p>&nbsp;</p>` is 13 characters of
+ * nothing. Repeating the title says nothing the reader does not already see above it.
+ */
+const descriptionNote = (description: any, title: any): number => {
+  const text = stripTags(description)
+  if (!text) return 0
+  const folded = fold(text)
+  const foldedTitle = fold(title)
+  if (foldedTitle && folded === foldedTitle) return 0
+  if (text.length < 100) return 0.25
+  if (text.length > DESCRIPTION_TOO_LONG) return 0.25
+  if (text.length > DESCRIPTION_LONG) return 0.5
+  if (foldedTitle && folded.startsWith(foldedTitle)) return 0.5
+  return 1
+}
+
+/**
+ * 200 characters is the target, 250 the absolute maximum; below 50 it says no more than the
+ * title. It must also be plain text: no html, no markdown, no link.
+ */
+const summaryNote = (summary: any, title: any): number => {
+  const text = String(summary ?? '').trim()
+  if (!text) return 0
+  const foldedTitle = fold(title)
+  if (foldedTitle && fold(text) === foldedTitle) return 0
+  if (isRichText(text)) return 0.25
+  if (text.length < 50) return 0.5
+  if (text.length <= 200) return 1
+  if (text.length <= 250) return 0.75
+  return 0.25
+}
+
+/** Too few keywords index nothing, too many dilute the indexing. */
+const keywordsNote = (keywords: any): number => {
+  const count = String(keywords ?? '').split(MULTI_SEP.trim()).map(k => k.trim()).filter(Boolean).length
+  if (!count) return 0
+  if (count <= 2) return 0.5
+  if (count <= 9) return 1
+  return 0.5
+}
+
+/**
+ * Metadata quality of a catalog line, from 0 to 100. Computed on the line itself, so the score
+ * always describes what the catalog actually shows.
+ */
+export const metadataQuality = (line: Record<string, any>): number => {
+  const notes: Record<string, number> = {
+    description: descriptionNote(line.description, line.title),
+    summary: summaryNote(line.summary, line.title),
+    license: filled(line.license),
+    keywords: keywordsNote(line.keywords),
+    topics: filled(line.topics),
+    creator: filled(line.creator),
+    origin: filled(line.origin),
+    frequency: filled(line.frequency),
+    spatial: filled(line.spatial),
+    temporal: filled(line.temporalStart) || filled(line.temporalEnd)
+  }
+  let points = 0
+  for (const [key, note] of Object.entries(notes)) points += note * QUALITY_POINTS[key]
+  return Math.round(100 * points / QUALITY_TOTAL)
 }
 
 export type CustomColumn = { srcKey: string, key: string, title: string }
@@ -117,6 +264,7 @@ export const buildCatalogSchema = (customColumns: CustomColumn[] = []) => [
   { key: 'bbox', type: 'string', title: 'Boîte englobante', 'x-group': group.computed, description: 'Emprise géographique calculée automatiquement (min lon, min lat, max lon, max lat).' },
   { key: 'projection', type: 'string', title: 'Projection', 'x-group': group.computed, description: 'Système de projection géographique détecté pour les données.' },
   { key: 'timeZone', type: 'string', title: 'Fuseau horaire', 'x-group': group.computed, description: 'Fuseau horaire détecté pour les colonnes de date/heure du jeu.' },
+  { key: 'metadataScore', type: 'integer', title: 'Qualité des métadonnées', 'x-group': group.computed, description: QUALITY_DOC },
 
   // — Propriété & visibilité —
   { key: 'owner', type: 'string', title: 'Propriétaire', 'x-group': group.ownership, 'x-refersTo': concept.account, description: 'Compte propriétaire du jeu (utilisateur ou organisation, éventuellement un de ses départements).' },
@@ -157,11 +305,8 @@ export const buildCatalogSchema = (customColumns: CustomColumn[] = []) => [
 
   // — Audit & dates —
   { key: 'createdAt', type: 'string', format: 'date-time', title: 'Date de création', 'x-group': group.audit, 'x-refersTo': concept.dateCreated, description: 'Date de création du jeu de données.' },
-  { key: 'createdBy', type: 'string', title: 'Créé par', 'x-group': group.audit, description: 'Utilisateur ayant créé le jeu.' },
   { key: 'updatedAt', type: 'string', format: 'date-time', title: 'Date de mise à jour', 'x-group': group.audit, description: 'Date de la dernière modification du jeu (métadonnées ou données).' },
-  { key: 'updatedBy', type: 'string', title: 'Mis à jour par', 'x-group': group.audit, description: 'Utilisateur ayant effectué la dernière modification.' },
   { key: 'dataUpdatedAt', type: 'string', format: 'date-time', title: 'Date de mises à jour des données', 'x-group': group.audit, description: 'Date de la dernière mise à jour des données elles-mêmes.' },
-  { key: 'dataUpdatedBy', type: 'string', title: 'Données mises à jour par', 'x-group': group.audit, description: 'Utilisateur ayant effectué la dernière mise à jour des données.' },
   { key: 'finalizedAt', type: 'string', format: 'date-time', title: 'Date de finalisation', 'x-group': group.audit, description: 'Date de fin du dernier traitement d\'indexation (jeu prêt à l\'emploi).' },
   { key: 'portalModified', type: 'string', format: 'date-time', title: 'Date de modification (portail)', 'x-group': group.audit, description: 'La date utilisée pour le tri et l\'affichage sur le portail (modified, sinon dataUpdatedAt, sinon updatedAt).' }
 ]
@@ -173,7 +318,7 @@ export const LIST_SELECT = [
   'bbox', 'projection', 'timeZone', 'owner', 'visibility', 'isRest', 'isVirtual', 'isMetaOnly',
   'originalFile', 'storage', 'schema', 'primaryKey', 'extensions', 'attachments', 'virtual', 'extras',
   'masterData', 'customMetadata', 'publicationSites', 'requestedPublicationSites', 'status', 'count',
-  'createdAt', 'createdBy', 'updatedAt', 'updatedBy', 'dataUpdatedAt', 'dataUpdatedBy', 'finalizedAt'
+  'createdAt', 'updatedAt', 'dataUpdatedAt', 'finalizedAt'
 ].join(',')
 
 const isPlainObject = (v: any): boolean => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -332,14 +477,14 @@ export const toCatalogLine = (d: any, opts: CatalogLineOptions) => {
 
     // — Audit & dates —
     createdAt: d.createdAt,
-    createdBy: d.createdBy?.name,
     updatedAt: d.updatedAt,
-    updatedBy: d.updatedBy?.name,
     dataUpdatedAt: d.dataUpdatedAt,
-    dataUpdatedBy: d.dataUpdatedBy?.name,
     finalizedAt: d.finalizedAt,
     portalModified: computeModified(d)
   }
+
+  // Computed on the line itself, so the score always describes what the catalog shows.
+  line.metadataScore = metadataQuality(line)
 
   // — Métadonnées personnalisées (dynamiques) —
   const custom = isPlainObject(d.customMetadata) ? d.customMetadata : {}
