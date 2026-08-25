@@ -67,10 +67,15 @@ commas, which a comma separator would split into bogus values.
 as URIs. data-fair maintains an `x-concept` annotation (`{ id, title }`, title already in
 French) on every column that carries an `x-refersTo`, so the title is read straight from
 there. Datasets not re-finalized since `x-concept` was introduced only carry the raw
-`x-refersTo` URI: those fall back on `VOCABULARY_TITLES` in `lib/catalog.ts`, a mirror of
-data-fair's standard vocabulary (`api/contract/vocabulary.js`) that maps both concept ids and
-their identifier URIs to the same French titles. Calculated columns are skipped, and a
-concept shared by several columns is listed once.
+`x-refersTo` URI, which is looked up in data-fair's vocabulary. That vocabulary is fetched
+once per run from `GET /api/v1/vocabulary` — an open route, no scope required — and indexed
+by concept id and by identifier URI. It only carries the **standard** vocabulary: concepts an
+organization defines privately would need a `settings` scope the processing API key does not
+have, and reach the catalog only through the `x-concept.title` data-fair already resolved.
+When nothing resolves — a private concept on a stale dataset, a vocabulary entry newer than
+the run, an unreachable endpoint — the technical value is written rather than the concept
+being dropped. Calculated columns are skipped, and a concept shared by several columns is
+listed once.
 
 `metadataScore` rates the metadata of each dataset from 0 to 100. Ten criteria receive a note
 from 0 to 1, weighted in points and scaled on their total; the column documents its own

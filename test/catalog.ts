@@ -1,8 +1,20 @@
 import { strict as assert } from 'node:assert'
 import { it, describe } from 'node:test'
-import { buildCatalogSchema, toCatalogLine, extractConcepts, LIST_SELECT, RETIRED_KEYS, metadataQuality, QUALITY_POINTS } from '../lib/catalog.ts'
+import { buildCatalogSchema, buildConceptTitles, toCatalogLine, extractConcepts, LIST_SELECT, RETIRED_KEYS, metadataQuality, QUALITY_POINTS } from '../lib/catalog.ts'
 
-const line = (dataset: any) => toCatalogLine(dataset, { virtualUsage: new Map(), customColumns: [] })
+// A trimmed stand-in for what GET /api/v1/vocabulary serves: titles already resolved to
+// plain strings, indexed by short id and by identifier URI.
+const VOCABULARY = [
+  { id: 'codeCommune', title: 'Code commune', identifiers: ['http://rdf.insee.fr/def/geo#codeCommune'] },
+  { id: 'latitude', title: 'Latitude', identifiers: ['http://schema.org/latitude', 'http://www.w3.org/2003/01/geo/wgs84_pos#lat'] },
+  { id: 'longitude', title: 'Longitude', identifiers: ['http://schema.org/longitude'] },
+  { id: 'year', title: 'Année', identifiers: ['https://www.w3.org/TR/owl-time/#time:year'] },
+  { id: 'siren', title: 'SIREN', identifiers: ['http://dbpedia.org/ontology/siren'] },
+  { id: 'latLon', title: 'Latitude / Longitude', identifiers: ['http://www.w3.org/2003/01/geo/wgs84_pos#lat_long'] }
+]
+const TITLES = buildConceptTitles(VOCABULARY)
+
+const line = (dataset: any) => toCatalogLine(dataset, { virtualUsage: new Map(), customColumns: [], conceptTitles: TITLES })
 
 describe('personal data', () => {
   it('should not expose the columns naming a person', () => {
@@ -243,7 +255,7 @@ describe('concepts column and extraction', () => {
       { key: 'lat', type: 'number', 'x-concept': { id: 'latitude', title: 'Latitude' } },
       { key: 'annee', type: 'string', 'x-concept': { id: 'year', title: 'Année' } }
     ]
-    assert.equal(extractConcepts(schema), 'Code commune; Longitude; Latitude; Année')
+    assert.equal(extractConcepts(schema, TITLES), 'Code commune; Longitude; Latitude; Année')
   })
 
   it('should resolve standard vocabulary titles when only id or string is provided', () => {
@@ -251,7 +263,7 @@ describe('concepts column and extraction', () => {
       { key: 'insee', type: 'string', 'x-concept': { id: 'codeCommune' } },
       { key: 'annee', type: 'string', 'x-concept': 'year' }
     ]
-    assert.equal(extractConcepts(schema), 'Code commune; Année')
+    assert.equal(extractConcepts(schema, TITLES), 'Code commune; Année')
   })
 
   it('should resolve concepts from x-refersTo URIs', () => {
@@ -259,14 +271,14 @@ describe('concepts column and extraction', () => {
       { key: 'insee', type: 'string', 'x-refersTo': 'http://rdf.insee.fr/def/geo#codeCommune' },
       { key: 'siren', type: 'string', 'x-refersTo': 'http://dbpedia.org/ontology/siren' }
     ]
-    assert.equal(extractConcepts(schema), 'Code commune; SIREN')
+    assert.equal(extractConcepts(schema, TITLES), 'Code commune; SIREN')
   })
 
   it('should support localized object titles in x-concept', () => {
     const schema = [
       { key: 'custom', type: 'string', 'x-concept': { id: 'c1', title: { fr: 'Mon Concept' } } }
     ]
-    assert.equal(extractConcepts(schema), 'Mon Concept')
+    assert.equal(extractConcepts(schema, TITLES), 'Mon Concept')
   })
 
   it('should deduplicate repeated concepts across columns preserving order', () => {
@@ -275,7 +287,7 @@ describe('concepts column and extraction', () => {
       { key: 'lat', type: 'number', 'x-concept': { id: 'latitude', title: 'Latitude' } },
       { key: 'insee2', type: 'string', 'x-concept': { id: 'codeCommune', title: 'Code commune' } }
     ]
-    assert.equal(extractConcepts(schema), 'Code commune; Latitude')
+    assert.equal(extractConcepts(schema, TITLES), 'Code commune; Latitude')
   })
 
   it('should ignore x-calculated columns', () => {
@@ -283,13 +295,37 @@ describe('concepts column and extraction', () => {
       { key: 'lat', type: 'number', 'x-concept': { id: 'latitude', title: 'Latitude' } },
       { key: '_geopoint', type: 'string', 'x-calculated': true, 'x-refersTo': 'http://www.w3.org/2003/01/geo/wgs84_pos#lat_long' }
     ]
-    assert.equal(extractConcepts(schema), 'Latitude')
+    assert.equal(extractConcepts(schema, TITLES), 'Latitude')
   })
 
   it('should return undefined when schema is empty or has no concepts', () => {
-    assert.equal(extractConcepts([]), undefined)
-    assert.equal(extractConcepts(undefined), undefined)
-    assert.equal(extractConcepts([{ key: 'col1', type: 'string' }]), undefined)
+    assert.equal(extractConcepts([], TITLES), undefined)
+    assert.equal(extractConcepts(undefined, TITLES), undefined)
+    assert.equal(extractConcepts([{ key: 'col1', type: 'string' }], TITLES), undefined)
+  })
+
+  it('should index vocabulary titles by short id and by every identifier URI', () => {
+    assert.equal(TITLES.latitude, 'Latitude')
+    assert.equal(TITLES['http://schema.org/latitude'], 'Latitude')
+    assert.equal(TITLES['http://www.w3.org/2003/01/geo/wgs84_pos#lat'], 'Latitude')
+  })
+
+  it('should survive a vocabulary that could not be fetched', () => {
+    assert.deepEqual(buildConceptTitles(undefined), {})
+    assert.deepEqual(buildConceptTitles({ error: 'boom' }), {})
+  })
+
+  it('should keep the technical value when the vocabulary resolves nothing', () => {
+    const schema = [
+      { key: 'a', type: 'string', 'x-concept': { id: 'o_acme_dossier' } },
+      { key: 'b', type: 'string', 'x-refersTo': 'https://acme.example/vocab#dossier' }
+    ]
+    assert.equal(extractConcepts(schema, {}), 'o_acme_dossier; https://acme.example/vocab#dossier')
+  })
+
+  it('should prefer the title data-fair resolved over the fetched vocabulary', () => {
+    const schema = [{ key: 'a', type: 'string', 'x-concept': { id: 'latitude', title: 'Latitude du point' } }]
+    assert.equal(extractConcepts(schema, TITLES), 'Latitude du point')
   })
 
   it('should populate concepts on a catalog line', () => {

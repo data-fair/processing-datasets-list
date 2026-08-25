@@ -1,6 +1,6 @@
 import type { RunFunction, ProcessingContext } from '@data-fair/lib-common-types/processings.js'
 import type { ProcessingConfig } from '#types/processingConfig/index.ts'
-import { buildCatalogSchema, buildCustomColumns, buildVirtualUsageIndex, toCatalogLine, LIST_SELECT, RETIRED_KEYS } from './catalog.ts'
+import { buildCatalogSchema, buildConceptTitles, buildCustomColumns, buildVirtualUsageIndex, toCatalogLine, LIST_SELECT, RETIRED_KEYS, type ConceptTitles } from './catalog.ts'
 import { extraColumns, mergeSchema, mergeLine, type SchemaColumn } from './preserve.ts'
 
 type DatasetRef = { id: string, title: string }
@@ -22,6 +22,9 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
   if (shouldBeStopped) return
 
   const datasets = await fetchAllDatasets(context, catalog.id, catalog.owner)
+  if (shouldBeStopped) return
+
+  const conceptTitles = await fetchConceptTitles(context)
   if (shouldBeStopped) return
 
   // Custom metadata columns are discovered from the keys present on the datasets
@@ -51,7 +54,7 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
 
   const virtualUsage = buildVirtualUsageIndex(datasets)
   const lines = datasets.map(d => mergeLine(
-    toCatalogLine(d, { virtualUsage, customColumns }),
+    toCatalogLine(d, { virtualUsage, customColumns, conceptTitles }),
     existing.values.get(d.id),
     extras
   ))
@@ -127,6 +130,27 @@ const syncSchema = async (context: ProcessingContext<ProcessingConfig>, catalogI
 const ownerFilter = (owner: Owner): string | undefined => {
   if (!owner?.type || !owner?.id) return undefined
   return owner.department ? `${owner.type}:${owner.id}:${owner.department}` : `${owner.type}:${owner.id}`
+}
+
+/**
+ * Fetches data-fair's vocabulary to label the concepts carried by the dataset columns.
+ * The route is open, so no scope is needed — but for that same reason it only serves the
+ * standard vocabulary: concepts an organization defines privately are not in there, and
+ * would only become visible if the API key ever gained a `settings` scope. Those still
+ * come through when data-fair has resolved them into `x-concept.title` on the column.
+ * A failure is not worth aborting a run over, so it degrades to an empty index.
+ */
+const fetchConceptTitles = async (context: ProcessingContext<ProcessingConfig>): Promise<ConceptTitles> => {
+  const { axios, log } = context
+  try {
+    const { data } = await axios.get('api/v1/vocabulary')
+    const titles = buildConceptTitles(data)
+    await log.info(`${Object.keys(titles).length} libellé(s) de concept chargé(s) depuis le vocabulaire`)
+    return titles
+  } catch (err: any) {
+    await log.warning(`Vocabulaire inaccessible (${err.message}) : les concepts non résolus seront affichés sous leur valeur technique`)
+    return {}
+  }
 }
 
 /**

@@ -88,124 +88,30 @@ const FREQUENCY_LABELS: Record<string, string> = {
   irregular: 'Irrégulière'
 }
 
-// Mirrors data-fair's standard vocabulary titles (api/contract/vocabulary.js).
-const VOCABULARY_TITLES: Record<string, string> = {
-  label: 'Libellé',
-  'http://www.w3.org/2000/01/rdf-schema#label': 'Libellé',
-  'http://www.bbc.co.uk/ontologies/coreconcepts/label': 'Libellé',
-  description: 'Description',
-  'http://schema.org/description': 'Description',
-  image: 'Image',
-  'http://schema.org/image': 'Image',
-  tag: 'Étiquette',
-  'https://schema.org/DefinedTermSet': 'Étiquette',
-  color: 'Couleur',
-  'https://schema.org/color': 'Couleur',
-  address: 'Adresse',
-  'http://schema.org/address': 'Adresse',
-  streetNumber: 'Numéro de rue',
-  'http://www.ontotext.com/proton/protonext#StreetNumber': 'Numéro de rue',
-  streetAddress: 'Rue ou lieu-dit',
-  'http://schema.org/streetAddress': 'Rue ou lieu-dit',
-  city: 'Commune',
-  'http://schema.org/City': 'Commune',
-  postalCode: 'Code postal',
-  'http://schema.org/postalCode': 'Code postal',
-  country: 'Pays',
-  'http://schema.org/addressCountry': 'Pays',
-  region: 'Région',
-  'https://schema.org/addressRegion': 'Région',
-  departement: 'Département',
-  'http://rdf.insee.fr/def/geo#Departement': 'Département',
-  addressId: 'Identifiant d\'adresse',
-  'http://www.w3.org/ns/locn#addressId': 'Identifiant d\'adresse',
-  codeCommune: 'Code commune',
-  'http://rdf.insee.fr/def/geo#codeCommune': 'Code commune',
-  codeDepartement: 'Code département',
-  'http://rdf.insee.fr/def/geo#codeDepartement': 'Code département',
-  codeRegion: 'Code région',
-  'http://rdf.insee.fr/def/geo#codeRegion': 'Code région',
-  codeEPCI: 'Code EPCI',
-  'http://rdf.insee.fr/def/geo#EtablissementPublicDeCooperationIntercommunale': 'Code EPCI',
-  codeIRIS: 'Code IRIS',
-  'http://rdf.insee.fr/def/geo#codeIRIS': 'Code IRIS',
-  'http://rdf.insee.fr/def/geo#IRIS': 'Code IRIS',
-  codeGrandQuartier: 'Code grand quartier',
-  'http://rdf.insee.fr/def/geo#GrandQuartier': 'Code grand quartier',
-  codePays: 'Code pays (COG)',
-  'http://rdf.insee.fr/def/geo#codePays': 'Code pays (COG)',
-  uniteUrbaine2020: 'Code unité urbaine 2020',
-  'http://rdf.insee.fr/def/geo#UniteUrbaine2020': 'Code unité urbaine 2020',
-  carreau: 'Code de carreau de 200m',
-  'http://rdf.insee.fr/def/geo#Carreau': 'Code de carreau de 200m',
-  'id-rnb': 'ID-RNB',
-  'https://rnb.gouv.fr/#ID-RNB': 'ID-RNB',
-  latitude: 'Latitude',
-  'http://schema.org/latitude': 'Latitude',
-  'http://www.w3.org/2003/01/geo/wgs84_pos#lat': 'Latitude',
-  longitude: 'Longitude',
-  'http://schema.org/longitude': 'Longitude',
-  'http://www.w3.org/2003/01/geo/wgs84_pos#long': 'Longitude',
-  latLon: 'Latitude / Longitude',
-  'http://www.w3.org/2003/01/geo/wgs84_pos#lat_long': 'Latitude / Longitude',
-  countryCodeISOAlpha2: 'Code pays (ISO, 2 caractères)',
-  'http://dbpedia.org/ontology/iso31661Code': 'Code pays (ISO, 2 caractères)',
-  'https://www.omg.org/spec/LCC/Countries/CountryRepresentation/Alpha2Code': 'Code pays (ISO, 2 caractères)',
-  countryCodeISOAlpha3: 'Code pays (ISO, 3 caractères)',
-  'https://www.omg.org/spec/LCC/Countries/CountryRepresentation/Alpha3Code': 'Code pays (ISO, 3 caractères)',
-  siret: 'SIRET',
-  'http://www.datatourisme.fr/ontology/core/1.0/#siret': 'SIRET',
-  siren: 'SIREN',
-  'http://dbpedia.org/ontology/siren': 'SIREN',
-  codeAPE: 'Code APE',
-  'http://www.datatourisme.fr/ontology/core/1.0#apeNaf': 'Code APE',
-  cjNiveau3: 'Catégorie juridique (niveau 3)',
-  'http://id.insee.fr/concepts/cj/cjNiveauIII': 'Catégorie juridique (niveau 3)',
-  idBV: 'Identifiant de bureau de vote',
-  'https://www.insee.fr/fr/information/3539086/idBV': 'Identifiant de bureau de vote',
-  date: 'Date d\'évènement',
-  'http://schema.org/Date': 'Date d\'évènement',
-  'http://purl.org/dc/identifierss/date': 'Date d\'évènement',
-  codeParcelle: 'Code parcelle',
-  'http://dbpedia.org/ontology/codeLandRegistry': 'Code parcelle',
-  geometry: 'Géométrie GeoJSON ou WKT',
-  'https://purl.org/geojson/vocab#geometry': 'Géométrie GeoJSON ou WKT',
-  attachment: 'Document numérique attaché',
-  'http://schema.org/DigitalDocument': 'Document numérique attaché',
-  webPage: 'Page Web',
-  'https://schema.org/WebPage': 'Page Web',
-  email: 'Adresse e-mail',
-  'https://www.w3.org/2006/vcard/ns#email': 'Adresse e-mail',
-  tel: 'N° de téléphone',
-  'https://www.w3.org/2006/vcard/ns#tel': 'N° de téléphone',
-  coordX: 'Coordonnée X',
-  'http://data.ign.fr/def/geometrie#coordX': 'Coordonnée X',
-  coordY: 'Coordonnée Y (projection libre)',
-  'http://data.ign.fr/def/geometrie#coordY': 'Coordonnée Y (projection libre)',
-  geometryProj: 'Géométrie GeoJSON ou WKT (projection libre)',
-  'http://data.ign.fr/def/geometrie#Geometry': 'Géométrie GeoJSON ou WKT (projection libre)',
-  startDate: 'Date de début',
-  'https://schema.org/startDate': 'Date de début',
-  endDate: 'Date de fin',
-  'https://schema.org/endDate': 'Date de fin',
-  dateCreated: 'Date de création',
-  'http://schema.org/dateCreated': 'Date de création',
-  'http://purl.org/dc/identifierss/created': 'Date de création',
-  openingHours: 'Horaires d\'ouverture',
-  'https://schema.org/openingHours': 'Horaires d\'ouverture',
-  year: 'Année',
-  'https://www.w3.org/TR/owl-time/#time:year': 'Année',
-  price: 'Prix',
-  'https://schema.org/price': 'Prix',
-  codeCPV: 'Code CPV',
-  'http://data.europa.eu/cpv/cpv': 'Code CPV',
-  'http://purl.org/cpv/2008': 'Code CPV',
-  qpv: 'Quartier prioritaire (QPV)',
-  'https://sig.ville.gouv.fr/qpv': 'Quartier prioritaire (QPV)',
-  attendeeCapacity: 'Capacité de participants',
-  'https://schema.org/maximumPhysicalAttendeeCapacity': 'Capacité de participants',
-  accountRef: 'Référence à un compte',
-  'https://github.com/data-fair/lib/account': 'Référence à un compte'
+/** Concept label by vocabulary id and by identifier URI, as built from data-fair's vocabulary. */
+export type ConceptTitles = Record<string, string>
+
+/**
+ * Indexes data-fair's vocabulary (`GET /api/v1/vocabulary`) by everything a column can
+ * carry: the short concept id and each of its identifier URIs, all pointing at the same
+ * label. Titles come out of that endpoint already resolved to the instance locale.
+ */
+export const buildConceptTitles = (vocabulary: any): ConceptTitles => {
+  const titles: ConceptTitles = {}
+  if (!Array.isArray(vocabulary)) return titles
+  for (const concept of vocabulary) {
+    const title = typeof concept?.title === 'string'
+      ? concept.title.trim()
+      : (typeof concept?.title === 'object' && concept.title ? String(concept.title.fr ?? concept.title.en ?? '').trim() : '')
+    if (!title) continue
+    if (typeof concept.id === 'string' && concept.id) titles[concept.id] = title
+    if (Array.isArray(concept.identifiers)) {
+      for (const identifier of concept.identifiers) {
+        if (typeof identifier === 'string' && identifier) titles[identifier] = title
+      }
+    }
+  }
+  return titles
 }
 
 /**
@@ -459,11 +365,13 @@ const joinTitles = (arr: any): string | undefined => {
 }
 
 /**
- * Extracts and deduplicates semantic concepts associated with the dataset's columns.
- * Recognizes x-concept (object with title or id, or string) and x-refersTo URIs,
- * mapping standard data-fair vocabulary items to their human-readable French titles.
+ * Extracts and deduplicates the semantic concepts carried by the dataset's columns.
+ * Reads the label off `x-concept` when data-fair has resolved one, else looks the
+ * `x-concept` id or the raw `x-refersTo` URI up in `titles`. When nothing resolves —
+ * a concept private to another organization, a vocabulary entry newer than the run —
+ * the technical value is kept rather than dropping the concept.
  */
-export const extractConcepts = (schema: any[] | undefined): string | undefined => {
+export const extractConcepts = (schema: any[] | undefined, titles: ConceptTitles = {}): string | undefined => {
   if (!Array.isArray(schema)) return undefined
   const concepts: string[] = []
   for (const col of schema) {
@@ -473,7 +381,7 @@ export const extractConcepts = (schema: any[] | undefined): string | undefined =
     if (xc) {
       if (typeof xc === 'string' && xc.trim()) {
         const trimmed = xc.trim()
-        title = VOCABULARY_TITLES[trimmed] || trimmed
+        title = titles[trimmed] || trimmed
       } else if (typeof xc === 'object') {
         if (typeof xc.title === 'string' && xc.title.trim()) {
           title = xc.title.trim()
@@ -481,13 +389,13 @@ export const extractConcepts = (schema: any[] | undefined): string | undefined =
           title = xc.title.fr || xc.title.en || Object.values(xc.title)[0]
         } else if (typeof xc.id === 'string' && xc.id.trim()) {
           const id = xc.id.trim()
-          title = VOCABULARY_TITLES[id] || id
+          title = titles[id] || id
         }
       }
     }
     if (!title && col['x-refersTo']) {
       const refersTo = String(col['x-refersTo']).trim()
-      title = VOCABULARY_TITLES[refersTo] || refersTo
+      title = titles[refersTo] || refersTo
     }
     if (title && typeof title === 'string' && title.trim()) {
       concepts.push(title.trim())
@@ -528,6 +436,7 @@ export const buildVirtualUsageIndex = (datasets: any[]): Map<string, number> => 
 export type CatalogLineOptions = {
   virtualUsage: Map<string, number>
   customColumns: CustomColumn[]
+  conceptTitles: ConceptTitles
 }
 
 /** Builds the account reference (`type:id` or `type:id:department`) used for the owner avatar. */
@@ -609,7 +518,7 @@ export const toCatalogLine = (d: any, opts: CatalogLineOptions) => {
     // — Structure & stockage —
     count: typeof d.count === 'number' ? d.count : undefined,
     nbColumns: Array.isArray(d.schema) ? d.schema.filter((p: any) => !p['x-calculated']).length : undefined,
-    concepts: extractConcepts(d.schema),
+    concepts: extractConcepts(d.schema, opts.conceptTitles),
     primaryKey: joinStrings(d.primaryKey),
     storageSize: d.storage?.size,
     indexedSize: d.storage?.indexed?.size,
