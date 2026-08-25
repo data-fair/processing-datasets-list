@@ -1,18 +1,12 @@
 {
   "type": "object",
+  "layout": "tabs",
   "required": [
     "datasetMode"
   ],
-  "properties": {
-    "preserveExtraColumns": {
-      "type": "boolean",
-      "title": "Préserver les colonnes ajoutées manuellement",
-      "default": true,
-      "description": "Les colonnes présentes sur le jeu de données catalogue mais non produites par ce traitement (annotations ajoutées à la main) sont conservées, schéma et valeurs. Sans cette option, chaque exécution les supprime définitivement."
-    }
-  },
   "allOf": [
     {
+      "title": "Jeu de données",
       "default": {
         "datasetMode": "create",
         "datasetTitle": "Catalogue des jeux de données"
@@ -69,6 +63,17 @@
           }
         }
       ]
+    },
+    {
+      "title": "Paramètres",
+      "properties": {
+        "preserveExtraColumns": {
+          "type": "boolean",
+          "title": "Préserver les colonnes ajoutées manuellement",
+          "default": true,
+          "description": "Les colonnes présentes sur le jeu de données catalogue mais non produites par ce traitement (annotations ajoutées à la main) sont conservées, schéma et valeurs. Sans cette option, chaque exécution les supprime définitivement."
+        }
+      }
     }
   ]
 }

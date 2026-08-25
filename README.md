@@ -48,7 +48,7 @@ vocabulary (`api/contract/vocabulary.js`) are used.
 | Métadonnées calculées | `bbox`, `projection`, `timeZone` (auto-detected, not editable), `metadataScore` |
 | Propriété & visibilité | `owner` (avatar), `visibility`, `published` |
 | Fichier | `fileName`, `fileFormat` |
-| Structure & stockage | `count`, `nbColumns`, `primaryKey`, `storageSize`, `indexedSize` |
+| Structure & stockage | `count`, `nbColumns`, `concepts`, `primaryKey`, `storageSize`, `indexedSize` |
 | Relations & enrichissements | `nbExtensions`, `nbAttachments`, `nbChildren` (virtual sources), `nbUsedInVirtual` (datasets reusing it), `nbApplications`, `nbRelatedDatasets` |
 | Données de référence | `isMasterData` (exposes reference-data services), `nbBulkSearchs` (bulk enrichment endpoints), `nbSingleSearchs` (code/label search endpoints) — derived from the dataset's `masterData` config |
 | Publication | `publicationPortals` (portal identifiers `type:id`), `nbPublicationSites`, `nbRequestedPublicationSites` |
@@ -58,10 +58,19 @@ vocabulary (`api/contract/vocabulary.js`) are used.
 The catalog carries **no author column**: who created or last updated a dataset names a
 person, and a catalog is made to be published. They are not requested from the API at all.
 
-Multi-valued columns (`keywords`, `topics`, `relatedDatasets`, `primaryKey`,
+Multi-valued columns (`keywords`, `topics`, `concepts`, `relatedDatasets`, `primaryKey`,
 `publicationPortals`) carry a `separator` so data-fair treats them as arrays. That separator
 is a **semicolon**, not a comma: topic labels, keywords and dataset titles routinely contain
 commas, which a comma separator would split into bogus values.
+
+`concepts` lists the semantic concepts carried by the dataset's columns, as **labels**, never
+as URIs. data-fair maintains an `x-concept` annotation (`{ id, title }`, title already in
+French) on every column that carries an `x-refersTo`, so the title is read straight from
+there. Datasets not re-finalized since `x-concept` was introduced only carry the raw
+`x-refersTo` URI: those fall back on `VOCABULARY_TITLES` in `lib/catalog.ts`, a mirror of
+data-fair's standard vocabulary (`api/contract/vocabulary.js`) that maps both concept ids and
+their identifier URIs to the same French titles. Calculated columns are skipped, and a
+concept shared by several columns is listed once.
 
 `metadataScore` rates the metadata of each dataset from 0 to 100. Ten criteria receive a note
 from 0 to 1, weighted in points and scaled on their total; the column documents its own

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { it, describe } from 'node:test'
-import { buildCatalogSchema, toCatalogLine, LIST_SELECT, RETIRED_KEYS, metadataQuality, QUALITY_POINTS } from '../lib/catalog.ts'
+import { buildCatalogSchema, toCatalogLine, extractConcepts, LIST_SELECT, RETIRED_KEYS, metadataQuality, QUALITY_POINTS } from '../lib/catalog.ts'
 
 const line = (dataset: any) => toCatalogLine(dataset, { virtualUsage: new Map(), customColumns: [] })
 
@@ -30,7 +30,7 @@ describe('personal data', () => {
 })
 
 describe('multi-valued separator', () => {
-  const MULTI_VALUED = ['keywords', 'topics', 'relatedDatasets', 'primaryKey', 'publicationPortals']
+  const MULTI_VALUED = ['keywords', 'topics', 'concepts', 'relatedDatasets', 'primaryKey', 'publicationPortals']
 
   it('should separate multi-valued columns with a semicolon, since values contain commas', () => {
     const schema = buildCatalogSchema()
@@ -223,5 +223,83 @@ describe('metadataQuality, description length steps', () => {
 
   it('should penalise a description beyond 5000 characters as heavily as an empty one', () => {
     assert.equal(score(prose(5001)), 100 - 15)
+  })
+})
+
+describe('concepts column and extraction', () => {
+  it('should define the concepts column in Structure & stockage group', () => {
+    const col = buildCatalogSchema().find(c => c.key === 'concepts')
+    assert.ok(col, 'concepts column should exist')
+    assert.equal(col.type, 'string')
+    assert.equal(col.separator, '; ')
+    assert.equal(col['x-group'], 'Structure & stockage')
+    assert.equal(col.title, 'Concepts')
+  })
+
+  it('should extract concepts from x-concept object with title', () => {
+    const schema = [
+      { key: 'code_insee', type: 'string', 'x-concept': { id: 'codeCommune', title: 'Code commune' } },
+      { key: 'lon', type: 'number', 'x-concept': { id: 'longitude', title: 'Longitude' } },
+      { key: 'lat', type: 'number', 'x-concept': { id: 'latitude', title: 'Latitude' } },
+      { key: 'annee', type: 'string', 'x-concept': { id: 'year', title: 'Année' } }
+    ]
+    assert.equal(extractConcepts(schema), 'Code commune; Longitude; Latitude; Année')
+  })
+
+  it('should resolve standard vocabulary titles when only id or string is provided', () => {
+    const schema = [
+      { key: 'insee', type: 'string', 'x-concept': { id: 'codeCommune' } },
+      { key: 'annee', type: 'string', 'x-concept': 'year' }
+    ]
+    assert.equal(extractConcepts(schema), 'Code commune; Année')
+  })
+
+  it('should resolve concepts from x-refersTo URIs', () => {
+    const schema = [
+      { key: 'insee', type: 'string', 'x-refersTo': 'http://rdf.insee.fr/def/geo#codeCommune' },
+      { key: 'siren', type: 'string', 'x-refersTo': 'http://dbpedia.org/ontology/siren' }
+    ]
+    assert.equal(extractConcepts(schema), 'Code commune; SIREN')
+  })
+
+  it('should support localized object titles in x-concept', () => {
+    const schema = [
+      { key: 'custom', type: 'string', 'x-concept': { id: 'c1', title: { fr: 'Mon Concept' } } }
+    ]
+    assert.equal(extractConcepts(schema), 'Mon Concept')
+  })
+
+  it('should deduplicate repeated concepts across columns preserving order', () => {
+    const schema = [
+      { key: 'insee1', type: 'string', 'x-concept': { id: 'codeCommune', title: 'Code commune' } },
+      { key: 'lat', type: 'number', 'x-concept': { id: 'latitude', title: 'Latitude' } },
+      { key: 'insee2', type: 'string', 'x-concept': { id: 'codeCommune', title: 'Code commune' } }
+    ]
+    assert.equal(extractConcepts(schema), 'Code commune; Latitude')
+  })
+
+  it('should ignore x-calculated columns', () => {
+    const schema = [
+      { key: 'lat', type: 'number', 'x-concept': { id: 'latitude', title: 'Latitude' } },
+      { key: '_geopoint', type: 'string', 'x-calculated': true, 'x-refersTo': 'http://www.w3.org/2003/01/geo/wgs84_pos#lat_long' }
+    ]
+    assert.equal(extractConcepts(schema), 'Latitude')
+  })
+
+  it('should return undefined when schema is empty or has no concepts', () => {
+    assert.equal(extractConcepts([]), undefined)
+    assert.equal(extractConcepts(undefined), undefined)
+    assert.equal(extractConcepts([{ key: 'col1', type: 'string' }]), undefined)
+  })
+
+  it('should populate concepts on a catalog line', () => {
+    const built = line({
+      id: 'ds1',
+      schema: [
+        { key: 'insee', type: 'string', 'x-concept': { id: 'codeCommune', title: 'Code commune' } },
+        { key: 'lat', type: 'number', 'x-concept': { id: 'latitude', title: 'Latitude' } }
+      ]
+    })
+    assert.equal(built.concepts, 'Code commune; Latitude')
   })
 })
