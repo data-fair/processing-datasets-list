@@ -6,14 +6,16 @@
   ],
   "allOf": [
     {
-      "title": "Jeu de données",
+      "title": "Dataset",
+      "x-i18n-title": { "fr": "Jeu de données" },
       "default": {
         "datasetMode": "create",
         "datasetTitle": "Catalogue des jeux de données"
       },
       "oneOf": [
         {
-          "title": "Créer le jeu de données",
+          "title": "Dataset creation",
+          "x-i18n-title": { "fr": "Créer le jeu de données", "en": "Create the dataset" },
           "required": ["datasetTitle"],
           "properties": {
             "datasetMode": {
@@ -23,13 +25,17 @@
             },
             "datasetTitle": {
               "type": "string",
-              "title": "Titre du jeu de données catalogue à créer",
+              "title": "Title of the catalog dataset to create",
+              "x-i18n-title": { "fr": "Titre du jeu de données catalogue à créer" },
+              "description": "The catalog dataset is created on the first run, then the processing switches to updating it.",
+              "x-i18n-description": { "fr": "Le jeu de données catalogue est créé lors de la première exécution, puis le traitement passe en mise à jour de ce jeu de données." },
               "default": "Catalogue des jeux de données"
             }
           }
         },
         {
-          "title": "Mettre à jour le jeu de données",
+          "title": "Dataset update",
+          "x-i18n-title": { "fr": "Mettre à jour le jeu de données", "en": "Update the dataset" },
           "required": ["dataset"],
           "properties": {
             "datasetMode": {
@@ -39,10 +45,11 @@
             },
             "dataset": {
               "type": "object",
-              "title": "Jeu de données catalogue à mettre à jour",
+              "title": "Catalog dataset to update",
+              "x-i18n-title": { "fr": "Jeu de données catalogue à mettre à jour" },
               "layout": {
                 "getItems": {
-                  "url": "${context.dataFairUrl}/api/v1/datasets?select=id,title&${context.ownerFilter}&raw=true",
+                  "url": "${context.dataFairUrl}/api/v1/datasets?select=id,title&size=50&${context.ownerFilter}&raw=true",
                   "qSearchParam": "q",
                   "itemsResults": "data.results",
                   "itemTitle": "item.title",
@@ -52,11 +59,13 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "title": "Identifiant"
+                  "title": "Identifier",
+                  "x-i18n-title": { "fr": "Identifiant" }
                 },
                 "title": {
                   "type": "string",
-                  "title": "Titre"
+                  "title": "Title",
+                  "x-i18n-title": { "fr": "Titre" }
                 }
               }
             }
@@ -65,13 +74,16 @@
       ]
     },
     {
-      "title": "Paramètres",
+      "title": "Parameters",
+      "x-i18n-title": { "fr": "Paramètres" },
       "properties": {
         "preserveExtraColumns": {
           "type": "boolean",
-          "title": "Préserver les colonnes ajoutées manuellement",
+          "title": "Preserve the columns added by hand",
+          "x-i18n-title": { "fr": "Préserver les colonnes ajoutées manuellement" },
           "default": true,
-          "description": "Les colonnes présentes sur le jeu de données catalogue mais non produites par ce traitement (annotations ajoutées à la main) sont conservées, schéma et valeurs. Sans cette option, chaque exécution les supprime définitivement."
+          "description": "The columns present on the catalog dataset but not produced by this processing (annotations added by hand) are kept, schema and values. Without this option, every run deletes them for good.",
+          "x-i18n-description": { "fr": "Les colonnes présentes sur le jeu de données catalogue mais non produites par ce traitement (annotations ajoutées à la main) sont conservées, schéma et valeurs. Sans cette option, chaque exécution les supprime définitivement." }
         }
       }
     }
