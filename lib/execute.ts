@@ -2,6 +2,7 @@ import type { RunFunction, ProcessingContext } from '@data-fair/lib-common-types
 import type { ProcessingConfig } from '#types/processingConfig/index.ts'
 import { buildCatalogSchema, buildConceptTitles, buildCustomColumns, buildVirtualUsageIndex, toCatalogLine, LIST_SELECT, RETIRED_KEYS, type ConceptTitles } from './catalog.ts'
 import { extraColumns, mergeSchema, mergeLine, type SchemaColumn } from './preserve.ts'
+import { dfRetry } from './retry.ts'
 
 type DatasetRef = { id: string, title: string }
 type Owner = { type?: string, id?: string, department?: string }
@@ -86,12 +87,12 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
     await log.step(`Création du jeu de données catalogue "${title}"`)
     // A freshly created, empty REST dataset does not emit a finalize event yet: we
     // don't wait here, the finalize is awaited once the lines have been written.
-    const dataset = (await axios.post('api/v1/datasets', {
+    const dataset = (await dfRetry(() => axios.post('api/v1/datasets', {
       title,
       isRest: true,
       schema: buildCatalogSchema(),
       extras: { processingId }
-    })).data
+    }), log, { label: 'Catalog dataset creation', creates: true })).data
     await log.info(`Jeu de données créé, id="${dataset.id}", title="${dataset.title}"`)
     const ref = { id: dataset.id, title: dataset.title }
     await patchConfig({ datasetMode: 'update', dataset: ref } as any)
@@ -113,7 +114,7 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
 const syncSchema = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, schema: any[]) => {
   const { axios, log } = context
   await log.info(`Synchronisation du schéma (${schema.length} colonnes)`)
-  await axios.patch(`api/v1/datasets/${catalogId}`, { schema })
+  await dfRetry(() => axios.patch(`api/v1/datasets/${catalogId}`, { schema }), log, { label: 'Catalog schema update' })
 }
 
 /**
@@ -212,7 +213,8 @@ const syncLines = async (context: ProcessingContext<ProcessingConfig>, catalogId
   for (let i = 0; i < actions.length; i += BULK_CHUNK_SIZE) {
     if (shouldBeStopped) break
     const chunk = actions.slice(i, i + BULK_CHUNK_SIZE)
-    const result = (await context.axios.post(`api/v1/datasets/${catalogId}/_bulk_lines`, chunk)).data
+    // Bulk writes are only retried on 429: a gateway error may hide a batch that went through.
+    const result = (await dfRetry(() => context.axios.post(`api/v1/datasets/${catalogId}/_bulk_lines`, chunk), log, { label: `Catalog lines ${i + 1}-${i + chunk.length}`, creates: true })).data
     nbOk += result?.nbOk ?? 0
     nbErrors += result?.nbErrors ?? 0
     if (result?.nbErrors) {
