@@ -36,13 +36,13 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
 
   // Load the catalog: sync the schema (static + discovered custom columns) then
   // write the lines, all under a single "data loading" step.
-  await log.step('Chargement des données')
+  await log.step('Loading data into the catalog')
 
   const extras = processingConfig.preserveExtraColumns === false
     ? []
     : extraColumns(catalog.schema, generatedSchema, RETIRED_KEYS)
   if (extras.length) {
-    await log.info(`${extras.length} colonne(s) ajoutée(s) manuellement, préservée(s) : ${extras.map(c => c.key).join(', ')}`)
+    await log.info(`Preserving ${extras.length} column(s) added by hand: ${extras.map(c => c.key).join(', ')}`)
   }
 
   // Read the lines BEFORE patching the schema: data-fair unsets the columns a schema patch
@@ -65,7 +65,7 @@ export const run: RunFunction<ProcessingConfig> = async (context) => {
   // We don't wait for a finalize event: data-fair finalizes the dataset on its own
   // once `_bulk_lines` has returned, and the finalize fires near-instantly for small
   // datasets — before a journal subscription could catch it, which would hang the run.
-  await log.info(`Catalogue mis à jour : ${summary.nbOk.toLocaleString()} ligne(s) écrite(s), ${summary.nbDeleted.toLocaleString()} supprimée(s), ${summary.nbErrors.toLocaleString()} en erreur`)
+  await log.info(`Catalog updated: ${summary.nbOk} line(s) written, ${summary.nbDeleted} deleted, ${summary.nbErrors} in error`)
 }
 
 /**
@@ -84,7 +84,7 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
 
   if (processingConfig.datasetMode === 'create') {
     const title = processingConfig.datasetTitle as string
-    await log.step(`Création du jeu de données catalogue "${title}"`)
+    await log.step(`Creating the catalog dataset "${title}"`)
     // A freshly created, empty REST dataset does not emit a finalize event yet: we
     // don't wait here, the finalize is awaited once the lines have been written.
     const dataset = (await dfRetry(() => axios.post('api/v1/datasets', {
@@ -93,17 +93,17 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
       schema: buildCatalogSchema(),
       extras: { processingId }
     }), log, { label: 'Catalog dataset creation', creates: true })).data
-    await log.info(`Jeu de données créé, id="${dataset.id}", title="${dataset.title}"`)
+    await log.info(`Catalog dataset created, id="${dataset.id}", title="${dataset.title}"`)
     const ref = { id: dataset.id, title: dataset.title }
     await patchConfig({ datasetMode: 'update', dataset: ref } as any)
     return { ...ref, owner: dataset.owner ?? {}, schema: dataset.schema ?? [] }
   }
 
   const ref = processingConfig.dataset as DatasetRef
-  await log.step(`Vérification du jeu de données catalogue "${ref?.title || ref?.id}"`)
+  await log.step(`Checking the catalog dataset "${ref?.title || ref?.id}"`)
   const dataset = (await axios.get(`api/v1/datasets/${ref.id}`)).data
-  if (!dataset) throw new Error(`Le jeu de données catalogue n'existe pas, id="${ref.id}"`)
-  await log.info(`Jeu de données catalogue trouvé, id="${dataset.id}", title="${dataset.title}"`)
+  if (!dataset) throw new Error(`The catalog dataset does not exist, id="${ref.id}"`)
+  await log.info(`Catalog dataset found, id="${dataset.id}", title="${dataset.title}"`)
   return { id: dataset.id, title: dataset.title, owner: dataset.owner ?? {}, schema: dataset.schema ?? [] }
 }
 
@@ -113,7 +113,7 @@ const resolveCatalogDataset = async (context: ProcessingContext<ProcessingConfig
  */
 const syncSchema = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, schema: any[]) => {
   const { axios, log } = context
-  await log.info(`Synchronisation du schéma (${schema.length} colonnes)`)
+  await log.info(`Updating the catalog schema (${schema.length} columns)`)
   await dfRetry(() => axios.patch(`api/v1/datasets/${catalogId}`, { schema }), log, { label: 'Catalog schema update' })
 }
 
@@ -146,10 +146,10 @@ const fetchConceptTitles = async (context: ProcessingContext<ProcessingConfig>):
   try {
     const { data } = await axios.get('api/v1/vocabulary')
     const titles = buildConceptTitles(data)
-    await log.info(`${Object.keys(titles).length} libellé(s) de concept chargé(s) depuis le vocabulaire`)
+    await log.info(`Loaded ${Object.keys(titles).length} concept label(s) from the vocabulary`)
     return titles
   } catch (err: any) {
-    await log.warning(`Vocabulaire inaccessible (${err.message}) : les concepts non résolus seront affichés sous leur valeur technique`)
+    await log.warning(`Vocabulary unavailable (${err.message}): unresolved concepts will show their technical value`)
     return {}
   }
 }
@@ -161,10 +161,10 @@ const fetchConceptTitles = async (context: ProcessingContext<ProcessingConfig>):
  */
 const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, catalogId: string, owner: Owner): Promise<any[]> => {
   const { axios, log } = context
-  await log.step('Récupération des jeux de données de l\'organisation')
+  await log.step('Fetching the datasets of the owner')
 
   const ownerParam = ownerFilter(owner)
-  if (!ownerParam) await log.warning('Propriétaire du catalogue inconnu : tous les jeux de données accessibles seront référencés')
+  if (!ownerParam) await log.warning('Unknown catalog owner: every dataset readable by the API key will be listed')
 
   const all: any[] = []
   let page = 1
@@ -186,7 +186,7 @@ const fetchAllDatasets = async (context: ProcessingContext<ProcessingConfig>, ca
     page++
   }
 
-  await log.info(`${all.length.toLocaleString()} jeu(x) de données à référencer`)
+  await log.info(`${all.length} dataset(s) to list in the catalog`)
   return all
 }
 
@@ -203,10 +203,10 @@ const syncLines = async (context: ProcessingContext<ProcessingConfig>, catalogId
   const staleIds = existingIds.filter(id => !keepIds.has(id))
   for (const id of staleIds) actions.push({ _id: id, _action: 'delete' })
   const nbDeleted = staleIds.length
-  if (nbDeleted) await log.info(`${nbDeleted.toLocaleString()} ligne(s) obsolète(s) à supprimer`)
+  if (nbDeleted) await log.info(`${nbDeleted} line(s) of datasets that no longer exist to delete`)
 
-  await log.task('Écriture des lignes du catalogue')
-  await log.progress('Écriture des lignes du catalogue', 0, actions.length)
+  await log.task('Writing the catalog lines')
+  await log.progress('Writing the catalog lines', 0, actions.length)
   let done = 0
   let nbOk = 0
   let nbErrors = 0
@@ -218,11 +218,11 @@ const syncLines = async (context: ProcessingContext<ProcessingConfig>, catalogId
     nbOk += result?.nbOk ?? 0
     nbErrors += result?.nbErrors ?? 0
     if (result?.nbErrors) {
-      await log.error(`${result.nbErrors} erreur(s) lors de l'écriture des lignes`)
+      await log.error(`${result.nbErrors} error(s) while writing ${chunk.length} catalog line(s)`)
       for (const error of (result.errors ?? [])) await log.error(JSON.stringify(error))
     }
     done += chunk.length
-    await log.progress('Écriture des lignes du catalogue', done, actions.length)
+    await log.progress('Writing the catalog lines', done, actions.length)
   }
 
   // nbOk from the bulk response counts every applied action (upserts and deletes);
